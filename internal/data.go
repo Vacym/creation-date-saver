@@ -2,7 +2,6 @@ package internal
 
 import (
 	"encoding/json"
-	"io/ioutil"
 	"os"
 	"time"
 )
@@ -17,7 +16,7 @@ type MetadataMap map[string]Metadata
 
 // LoadMetadata loads the metadata from a JSON file.
 func LoadMetadata(filePath string) (MetadataMap, error) {
-	file, err := ioutil.ReadFile(filePath)
+	file, err := os.ReadFile(filePath)
 	if err != nil {
 		// If the file does not exist, return an empty map.
 		if os.IsNotExist(err) {
@@ -42,7 +41,7 @@ func SaveMetadata(filePath string, metadata MetadataMap) error {
 		return err
 	}
 
-	err = ioutil.WriteFile(filePath, data, 0644)
+	err = os.WriteFile(filePath, data, 0644)
 	if err != nil {
 		return err
 	}
