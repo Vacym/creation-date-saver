@@ -10,4 +10,7 @@ require (
 	gopkg.in/yaml.v2 v2.4.0
 )
 
-require golang.org/x/sys v0.33.0 // indirect
+require (
+	github.com/romdo/go-debounce v0.1.0 // indirect
+	golang.org/x/sys v0.33.0 // indirect
+)

@@ -9,3 +9,6 @@ include_subfolders: true
 
 # Path to the file with file creation timestamps
 metadata_file: "./file_metadata.json"
+
+# Delay in seconds before saving the metadata file after a change is detected.
+save_delay_seconds: 1

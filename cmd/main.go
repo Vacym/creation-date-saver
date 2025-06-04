@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"path/filepath"
+	"time"
 )
 
 func main() {
@@ -21,9 +22,11 @@ func main() {
 		metadataFilePath = filepath.Join(conf.WatchFolder, metadataFilePath)
 	}
 
-	datetimeRepo, err := jsonstore.NewRepository(
+	datetimeRepo, err := jsonstore.CreateTimeRepo(
 		metadataFilePath,
-		jsonstore.RepositoryConfig{},
+		jsonstore.RepoConfig{
+			SaveDelay: conf.SaveDelaySeconds * time.Second,
+		},
 	)
 	if err != nil {
 		log.Fatalf("Error creating JSON repository: %v", err)
