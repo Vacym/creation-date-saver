@@ -1,6 +1,8 @@
-package internal
+package watcher
 
 import (
+	"creation-date-saver/domain"
+	"creation-date-saver/internal/filter"
 	"log"
 	"os"
 	"path/filepath"
@@ -9,22 +11,19 @@ import (
 	"github.com/fsnotify/fsnotify"
 )
 
+type timeRepo interface {
+	Get(relPath string) (domain.Metadata, bool)
+	Upsert(meta domain.Metadata) error
+	Delete(relPath string) error
+}
+
 // WatchFolder monitors the specified folder and handles file system events.
-func WatchFolder(folder string, includeSubfolders bool, metadataFile string) error {
+func WatchFolder(folder string, includeSubfolders bool, repo timeRepo) error {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		return err
 	}
 	defer watcher.Close()
-
-	if !filepath.IsAbs(metadataFile) {
-		metadataFile = filepath.Join(folder, metadataFile)
-	}
-
-	metadata, err := LoadMetadata(metadataFile)
-	if err != nil {
-		return err
-	}
 
 	done := make(chan bool)
 
@@ -37,7 +36,7 @@ func WatchFolder(folder string, includeSubfolders bool, metadataFile string) err
 				}
 
 				// Skip temporary or unwanted files.
-				if IsTemporaryFile(event.Name) {
+				if filter.IsTemporaryFile(event.Name) {
 					continue
 				}
 
@@ -63,21 +62,25 @@ func WatchFolder(folder string, includeSubfolders bool, metadataFile string) err
 						t, err := times.Stat(event.Name)
 						if err == nil && t.HasBirthTime() {
 							// Use birth time if available.
-							UpdateCreationTime(metadata, relPath, t.BirthTime())
+							repo.Upsert(domain.Metadata{
+								Patch:        relPath,
+								CreationTime: t.BirthTime(),
+							})
 						} else {
 							// Fall back to modification time if birth time is not available.
 							fileInfo, err := os.Stat(event.Name)
 							if err == nil {
-								UpdateCreationTime(metadata, relPath, fileInfo.ModTime())
+								repo.Upsert(domain.Metadata{
+									Patch:        relPath,
+									CreationTime: fileInfo.ModTime(),
+								})
 							}
 						}
 					}
-					SaveMetadata(metadataFile, metadata)
 
 				case fsnotify.Rename, fsnotify.Remove:
 					log.Println("File removed or renamed:", relPath, event.Op)
-					DeleteMetadata(metadata, relPath)
-					SaveMetadata(metadataFile, metadata)
+					repo.Delete(relPath)
 
 				case fsnotify.Write:
 					log.Println("File written:", relPath)
