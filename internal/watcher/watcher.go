@@ -3,11 +3,11 @@ package watcher
 import (
 	"creation-date-saver/domain"
 	"creation-date-saver/internal/filter"
+	"creation-date-saver/internal/processor"
 	"log"
 	"os"
 	"path/filepath"
 
-	"github.com/djherbis/times"
 	"github.com/fsnotify/fsnotify"
 )
 
@@ -18,7 +18,7 @@ type timeRepo interface {
 }
 
 // WatchFolder monitors the specified folder and handles file system events.
-func WatchFolder(folder string, includeSubfolders bool, repo timeRepo) error {
+func WatchFolder(folder string, includeSubfolders bool, processor *processor.Processor) error {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		return err
@@ -47,6 +47,11 @@ func WatchFolder(folder string, includeSubfolders bool, repo timeRepo) error {
 					continue
 				}
 
+				file := domain.File{
+					Path:    event.Name,
+					RelPath: relPath,
+				}
+
 				switch event.Op {
 				case fsnotify.Create:
 					log.Println("File created:", relPath)
@@ -55,32 +60,17 @@ func WatchFolder(folder string, includeSubfolders bool, repo timeRepo) error {
 					if isDir(event.Name) {
 						err := watcher.Add(event.Name)
 						if err != nil {
-							log.Printf("Error adding directory to watcher: %v\n", err)
+							log.Printf("Error adding directory %s to watcher: %v\n", event.Name, err)
 						}
 						log.Printf("New folder added to watcher: %s\n", relPath)
+
 					} else {
-						t, err := times.Stat(event.Name)
-						if err == nil && t.HasBirthTime() {
-							// Use birth time if available.
-							repo.Upsert(domain.Metadata{
-								Patch:        relPath,
-								CreationTime: t.BirthTime(),
-							})
-						} else {
-							// Fall back to modification time if birth time is not available.
-							fileInfo, err := os.Stat(event.Name)
-							if err == nil {
-								repo.Upsert(domain.Metadata{
-									Patch:        relPath,
-									CreationTime: fileInfo.ModTime(),
-								})
-							}
-						}
+						processor.HandleCreate(file)
 					}
 
 				case fsnotify.Rename, fsnotify.Remove:
 					log.Println("File removed or renamed:", relPath, event.Op)
-					repo.Delete(relPath)
+					processor.HandleRemove(file)
 
 				case fsnotify.Write:
 					log.Println("File written:", relPath)
@@ -110,7 +100,7 @@ func WatchFolder(folder string, includeSubfolders bool, repo timeRepo) error {
 			if info.IsDir() {
 				err := watcher.Add(path)
 				if err != nil {
-					log.Printf("Error adding directory to watcher: %v\n", err)
+					log.Printf("Error adding directory %s to watcher: %v\n", path, err)
 				}
 			}
 			return nil

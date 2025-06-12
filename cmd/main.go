@@ -2,6 +2,8 @@ package main
 
 import (
 	"creation-date-saver/config"
+	"creation-date-saver/internal/fs/linux"
+	"creation-date-saver/internal/processor"
 	"creation-date-saver/internal/storage/jsonstore"
 	"creation-date-saver/internal/watcher"
 	"fmt"
@@ -11,7 +13,7 @@ import (
 )
 
 func main() {
-	// Загружаем конфигурацию
+	// Load configuration
 	conf, err := config.LoadConfig("./config.yaml")
 	if err != nil {
 		log.Fatalf("Error config loading: %v", err)
@@ -32,8 +34,13 @@ func main() {
 		log.Fatalf("Error creating JSON repository: %v", err)
 	}
 
-	// Запускаем отслеживание изменений в папке
-	err = watcher.WatchFolder(conf.WatchFolder, conf.IncludeSubfolders, datetimeRepo)
+	fsRepo := linux.NewFileSystem()
+
+	processor := processor.New(datetimeRepo, fsRepo)
+	processor.SyncFolderMetadata(conf.WatchFolder, conf.IncludeSubfolders)
+
+	// Start watching for changes in the folder
+	err = watcher.WatchFolder(conf.WatchFolder, conf.IncludeSubfolders, processor)
 	if err != nil {
 		log.Fatalf("Error folder watching: %v", err)
 	}
