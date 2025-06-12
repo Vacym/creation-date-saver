@@ -31,7 +31,8 @@ func main() {
 	datetimeRepo, err := jsonstore.CreateTimeRepo(
 		metadataFilePath,
 		jsonstore.RepoConfig{
-			SaveDelay: conf.SaveDelaySeconds * time.Second,
+			SaveDelay:   conf.SaveDelaySeconds * time.Second,
+			DeleteDelay: conf.DeleteDelaySeconds * time.Second,
 		},
 	)
 	if err != nil {
@@ -40,7 +41,7 @@ func main() {
 
 	fsRepo := linux.NewFileSystem()
 
-	processor := processor.New(datetimeRepo, fsRepo)
+	processor := processor.New(datetimeRepo, fsRepo, 100*time.Millisecond)
 	processor.SyncFolderMetadata(conf.WatchFolder, conf.IncludeSubfolders)
 
 	// Start watching for changes in the folder

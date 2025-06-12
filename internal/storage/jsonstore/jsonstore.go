@@ -2,6 +2,7 @@ package jsonstore
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"sync"
 	"time"
@@ -35,7 +36,10 @@ func CreateTimeRepo(filePath string, config RepoConfig) (*TimeRepo, error) {
 	}
 
 	debouncedSave, _ := debounce.New(config.SaveDelay, func() {
-		saveMetadata(filePath, cache)
+		err := saveMetadata(filePath, cache)
+		if err != nil {
+			fmt.Printf("Error saving metadata: %v\n", err)
+		}
 	})
 
 	return &TimeRepo{
@@ -73,6 +77,23 @@ func (r *TimeRepo) Upsert(meta domain.Metadata) error {
 func (r *TimeRepo) Delete(relPath string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	return r.delete(relPath)
+}
+
+// DeleteByPrefix removes all metadata entries whose relative path starts with the given prefix.
+func (r *TimeRepo) DeleteByPrefix(prefix string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for k := range r.cache {
+		if len(k) >= len(prefix) && k[:len(prefix)] == prefix {
+			r.delete(k)
+		}
+	}
+	r.debouncedSave()
+	return nil
+}
+
+func (r *TimeRepo) delete(relPath string) error {
 	// If a delete timer already exists, do nothing
 	if _, exists := r.deleteTimers[relPath]; exists {
 		return nil

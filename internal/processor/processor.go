@@ -2,8 +2,10 @@ package processor
 
 import (
 	"creation-date-saver/domain"
+	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/djherbis/times"
@@ -13,6 +15,7 @@ type timeRepo interface {
 	Get(relPath string) (domain.Metadata, bool)
 	Upsert(meta domain.Metadata) error
 	Delete(relPath string) error
+	DeleteByPrefix(prefix string) error
 }
 
 type fsRepo interface {
@@ -22,22 +25,54 @@ type fsRepo interface {
 type Processor struct {
 	timeRepo timeRepo
 	fsRepo   fsRepo
+
+	ignoreMu    sync.Mutex
+	ignoreMap   map[string]time.Time
+	ignoreDelay time.Duration
 }
 
 // New creates a new Processor instance.
-func New(repo timeRepo, fsRepo fsRepo) *Processor {
+func New(repo timeRepo, fsRepo fsRepo, ignoreDelay time.Duration) *Processor {
 	return &Processor{
-		timeRepo: repo,
-		fsRepo:   fsRepo,
+		timeRepo:    repo,
+		fsRepo:      fsRepo,
+		ignoreMap:   make(map[string]time.Time),
+		ignoreDelay: ignoreDelay,
 	}
 }
 
+func (p *Processor) shouldIgnore(relPath string) bool {
+	p.ignoreMu.Lock()
+	defer p.ignoreMu.Unlock()
+	last, ok := p.ignoreMap[relPath]
+	if !ok {
+		return false
+	}
+	if time.Since(last) < p.ignoreDelay {
+		return true
+	}
+	return false
+}
+
+func (p *Processor) markIgnored(relPath string) {
+	p.ignoreMu.Lock()
+	defer p.ignoreMu.Unlock()
+	p.ignoreMap[relPath] = time.Now()
+}
+
 func (p *Processor) HandleCreate(file domain.File) {
+	if p.shouldIgnore(file.RelPath) {
+		return
+	}
 	// Check if metadata already exists for this file (possible quick delete-create scenario)
 	meta, ok := p.timeRepo.Get(file.RelPath)
 	if ok {
 		// Use the stored creation time as the true creation time
-		p.fsRepo.SetCreationTime(file.Path, meta.CreationTime)
+		p.markIgnored(file.RelPath)
+		err := p.fsRepo.SetCreationTime(file.Path, meta.CreationTime)
+		if err != nil {
+			fmt.Println("Error setting creation time:", err)
+		}
 		// Upsert to ensure metadata is up to date
 		p.timeRepo.Upsert(domain.Metadata{
 			Patch:        file.RelPath,
@@ -48,6 +83,9 @@ func (p *Processor) HandleCreate(file domain.File) {
 
 	t, err := times.Stat(file.Path)
 
+	if t == nil {
+		return
+	}
 	crTime := t.BirthTime()
 	if err != nil || !t.HasBirthTime() {
 		crTime = t.ModTime()
@@ -60,7 +98,16 @@ func (p *Processor) HandleCreate(file domain.File) {
 }
 
 func (p *Processor) HandleRemove(file domain.File) {
-	p.timeRepo.Delete(file.RelPath)
+	if p.shouldIgnore(file.RelPath) {
+		return
+	}
+	_, ok := p.timeRepo.Get(file.RelPath)
+	if ok {
+		p.timeRepo.Delete(file.RelPath)
+	} else {
+		// If metadata does not exist, maybe it is a folder
+		p.timeRepo.DeleteByPrefix(file.RelPath + string(os.PathSeparator))
+	}
 }
 
 // SyncFolderMetadata updates the metadata of all files in the root folder (and subfolders if recursive).
@@ -120,6 +167,7 @@ func (p *Processor) SyncFolderMetadata(root string, recursive bool) error {
 		// If the date in the repository is less than the file's date — update the file's date
 		if meta.CreationTime.Before(fileCreationTime) {
 			// Update the file's modification time to meta.CreationTime
+			p.markIgnored(relPath)
 			err := p.fsRepo.SetCreationTime(path, meta.CreationTime)
 			if err != nil {
 				return err
