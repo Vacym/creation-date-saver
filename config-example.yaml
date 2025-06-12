@@ -12,3 +12,6 @@ metadata_file: "./file_metadata.json"
 
 # Delay in seconds before saving the metadata file after a change is detected.
 save_delay_seconds: 1
+
+# Delay in seconds before deleting the metadata after a file is deleted.
+delete_delay_seconds: 1

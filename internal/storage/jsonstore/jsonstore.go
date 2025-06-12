@@ -11,9 +11,10 @@ import (
 	"github.com/romdo/go-debounce"
 )
 
-// RepoConfig holds configuration for the repository, e.g., save delay.
+// RepoConfig holds configuration for the repository.
 type RepoConfig struct {
-	SaveDelay time.Duration // not used yet, but reserved for future use
+	SaveDelay   time.Duration // debounce delay for saving metadata file
+	DeleteDelay time.Duration // delay before actual metadata deletion
 }
 
 // TimeRepo provides access to file metadata stored in JSON.
@@ -23,6 +24,7 @@ type TimeRepo struct {
 	mu            sync.Mutex
 	cache         map[string]Metadata
 	debouncedSave func()
+	deleteTimers  map[string]*time.Timer // timers for delayed deletion
 }
 
 // CreateTimeRepo creates a new Repository with the given file path and config.
@@ -41,6 +43,7 @@ func CreateTimeRepo(filePath string, config RepoConfig) (*TimeRepo, error) {
 		config:        config,
 		cache:         cache,
 		debouncedSave: debouncedSave,
+		deleteTimers:  make(map[string]*time.Timer),
 	}, nil
 }
 
@@ -56,17 +59,39 @@ func (r *TimeRepo) Get(relPath string) (domain.Metadata, bool) {
 func (r *TimeRepo) Upsert(meta domain.Metadata) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	// Cancel delete timer if it exists
+	if timer, ok := r.deleteTimers[meta.Patch]; ok && timer != nil {
+		timer.Stop()
+		delete(r.deleteTimers, meta.Patch)
+	}
 	r.cache[meta.Patch] = domainMetadataToModel(meta)
 	r.debouncedSave()
 	return nil
 }
 
-// Delete removes metadata for a given relPath.
+// Delete schedules metadata removal for a given relPath after DeleteDelay.
 func (r *TimeRepo) Delete(relPath string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	delete(r.cache, relPath)
-	r.debouncedSave()
+	// If a delete timer already exists, do nothing
+	if _, exists := r.deleteTimers[relPath]; exists {
+		return nil
+	}
+	// If DeleteDelay is zero, delete immediately
+	delay := r.config.DeleteDelay
+	if delay == 0 {
+		delete(r.cache, relPath)
+		r.debouncedSave()
+		return nil
+	}
+	// Start a delete timer using DeleteDelay
+	r.deleteTimers[relPath] = time.AfterFunc(delay, func() {
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		delete(r.cache, relPath)
+		delete(r.deleteTimers, relPath)
+		r.debouncedSave()
+	})
 	return nil
 }
 

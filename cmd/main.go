@@ -6,6 +6,7 @@ import (
 	"creation-date-saver/internal/processor"
 	"creation-date-saver/internal/storage/jsonstore"
 	"creation-date-saver/internal/watcher"
+	"flag"
 	"fmt"
 	"log"
 	"path/filepath"
@@ -13,8 +14,11 @@ import (
 )
 
 func main() {
+	configPath := flag.String("config", "./config.yaml", "Path to config file")
+	flag.Parse()
+
 	// Load configuration
-	conf, err := config.LoadConfig("./config.yaml")
+	conf, err := config.LoadConfig(*configPath)
 	if err != nil {
 		log.Fatalf("Error config loading: %v", err)
 	}

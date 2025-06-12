@@ -33,23 +33,30 @@ func New(repo timeRepo, fsRepo fsRepo) *Processor {
 }
 
 func (p *Processor) HandleCreate(file domain.File) {
-	t, err := times.Stat(file.Path)
-	if err == nil && t.HasBirthTime() {
-		// Use birth time if available.
+	// Check if metadata already exists for this file (possible quick delete-create scenario)
+	meta, ok := p.timeRepo.Get(file.RelPath)
+	if ok {
+		// Use the stored creation time as the true creation time
+		p.fsRepo.SetCreationTime(file.Path, meta.CreationTime)
+		// Upsert to ensure metadata is up to date
 		p.timeRepo.Upsert(domain.Metadata{
 			Patch:        file.RelPath,
-			CreationTime: t.BirthTime(),
+			CreationTime: meta.CreationTime,
 		})
-	} else {
-		// Fall back to modification time if birth time is not available.
-		fileInfo, err := os.Stat(file.Path)
-		if err == nil {
-			p.timeRepo.Upsert(domain.Metadata{
-				Patch:        file.RelPath,
-				CreationTime: fileInfo.ModTime(),
-			})
-		}
+		return
 	}
+
+	t, err := times.Stat(file.Path)
+
+	crTime := t.BirthTime()
+	if err != nil || !t.HasBirthTime() {
+		crTime = t.ModTime()
+	}
+
+	p.timeRepo.Upsert(domain.Metadata{
+		Patch:        file.RelPath,
+		CreationTime: crTime,
+	})
 }
 
 func (p *Processor) HandleRemove(file domain.File) {

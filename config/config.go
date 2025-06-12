@@ -8,12 +8,12 @@ import (
 )
 
 type Config struct {
-	WatchFolder       string        `yaml:"watch_folder"`
-	IncludeSubfolders bool          `yaml:"include_subfolders"`
-	MetadataFile      string        `yaml:"metadata_file"`
-	SaveDelaySeconds  time.Duration `yaml:"save_delay_seconds"`
-	SyncDelaySeconds  int           `yaml:"sync_delay_seconds"` // TODO
-	LogLevel          string        `yaml:"log_level"`          // TODO
+	WatchFolder        string        `yaml:"watch_folder"`
+	IncludeSubfolders  bool          `yaml:"include_subfolders"`
+	MetadataFile       string        `yaml:"metadata_file"`
+	SaveDelaySeconds   time.Duration `yaml:"save_delay_seconds"`
+	DeleteDelaySeconds time.Duration `yaml:"delete_delay_seconds"`
+	LogLevel           string        `yaml:"log_level"` // TODO
 }
 
 func LoadConfig(configPath string) (*Config, error) {
