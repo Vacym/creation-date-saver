@@ -113,6 +113,7 @@ func (p *Processor) HandleRemove(file domain.File) {
 // SyncFolderMetadata updates the metadata of all files in the root folder (and subfolders if recursive).
 // If the date in the repository is less than the file's date, the file's creation date is also updated.
 func (p *Processor) SyncFolderMetadata(root string, recursive bool) error {
+	const allowedDrift = 2 * time.Second
 	return filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -164,8 +165,8 @@ func (p *Processor) SyncFolderMetadata(root string, recursive bool) error {
 			}
 		}
 
-		// If the date in the repository is less than the file's date — update the file's date
-		if meta.CreationTime.Before(fileCreationTime) {
+		// If the difference between dates is less than the allowed drift, do not update the file time
+		if meta.CreationTime.Add(allowedDrift).Before(fileCreationTime) {
 			// Update the file's modification time to meta.CreationTime
 			p.markIgnored(relPath)
 			err := p.fsRepo.SetCreationTime(path, meta.CreationTime)
