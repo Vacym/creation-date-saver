@@ -18,7 +18,8 @@ type timeRepo interface {
 }
 
 // WatchFolder monitors the specified folder and handles file system events.
-func WatchFolder(folder string, includeSubfolders bool, processor *processor.Processor) error {
+// If flt is provided, paths matching any pattern will be ignored.
+func WatchFolder(folder string, includeSubfolders bool, processor *processor.Processor, flt *filter.Filter) error {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		return err
@@ -47,6 +48,11 @@ func WatchFolder(folder string, includeSubfolders bool, processor *processor.Pro
 					continue
 				}
 
+				// Ignore by external filter if provided.
+				if flt != nil && (flt.ShouldFilter(relPath) || flt.ShouldFilter(event.Name)) {
+					continue
+				}
+
 				file := domain.File{
 					Path:    event.Name,
 					RelPath: relPath,
@@ -58,6 +64,10 @@ func WatchFolder(folder string, includeSubfolders bool, processor *processor.Pro
 
 					// Check if it's a directory, if so, add it to the watcher
 					if isDir(event.Name) {
+						// Skip watching filtered directories
+						if flt != nil && (flt.ShouldFilter(relPath) || flt.ShouldFilter(event.Name)) {
+							continue
+						}
 						err := watcher.Add(event.Name)
 						if err != nil {
 							log.Printf("Error adding directory %s to watcher: %v\n", event.Name, err)
@@ -98,8 +108,15 @@ func WatchFolder(folder string, includeSubfolders bool, processor *processor.Pro
 	if includeSubfolders {
 		filepath.Walk(folder, func(path string, info os.FileInfo, err error) error {
 			if info.IsDir() {
-				err := watcher.Add(path)
-				if err != nil {
+				// Skip filtered directories during initial watch setup
+				if flt != nil {
+					if rel, rerr := filepath.Rel(folder, path); rerr == nil {
+						if flt.ShouldFilter(rel) || flt.ShouldFilter(path) {
+							return nil
+						}
+					}
+				}
+				if err := watcher.Add(path); err != nil {
 					log.Printf("Error adding directory %s to watcher: %v\n", path, err)
 				}
 			}

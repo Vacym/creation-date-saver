@@ -2,6 +2,7 @@ package processor
 
 import (
 	"creation-date-saver/domain"
+	"creation-date-saver/internal/filter"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -112,7 +113,7 @@ func (p *Processor) HandleRemove(file domain.File) {
 
 // SyncFolderMetadata updates the metadata of all files in the root folder (and subfolders if recursive).
 // If the date in the repository is less than the file's date, the file's creation date is also updated.
-func (p *Processor) SyncFolderMetadata(root string, recursive bool) error {
+func (p *Processor) SyncFolderMetadata(root string, recursive bool, flt *filter.Filter) error {
 	const allowedDrift = 2 * time.Second
 	return filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -131,6 +132,11 @@ func (p *Processor) SyncFolderMetadata(root string, recursive bool) error {
 		relPath, err := filepath.Rel(root, path)
 		if err != nil {
 			return err
+		}
+
+		// Skip files matching filter rules provided for initial sync.
+		if flt != nil && (flt.ShouldFilter(relPath) || flt.ShouldFilter(path)) {
+			return nil
 		}
 
 		t, terr := times.Stat(path)
